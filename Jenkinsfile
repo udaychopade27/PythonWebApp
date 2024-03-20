@@ -18,7 +18,7 @@ pipeline {
         stage("Run"){
             steps {
                 echo "run the image"
-                sh "docker run -d -p 8000:8000  bmi-app "
+                sh "docker run -d -p 5000:5000  bmi-app "
             }
         }
     }
