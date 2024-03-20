@@ -1,3 +1,4 @@
+
 # Flask BMI Calculator
 
 This is a simple web application built with Flask that calculates Body Mass Index (BMI).
@@ -50,5 +51,4 @@ This is a simple web application built with Flask that calculates Body Mass Inde
 
 ## Contributing
 
-Contributions are welcome! If you find any bugs or have suggestions for improvements, please open an issue or create a pull request.
-
+Contributions are welcome! If you find any bugs or have suggestions for improvements, please open an issue or create a pull request
