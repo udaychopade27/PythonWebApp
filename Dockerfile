@@ -1,8 +1,8 @@
 FROM python:3.10
 
-WORKDIR /home/$USER/PythonWebApp
+WORKDIR /PythonWebApp
 
-COPY . /home/$USER/PythonWebApp
+COPY . /PythonWebApp
 
 RUN pip install -r requirements.txt
 
