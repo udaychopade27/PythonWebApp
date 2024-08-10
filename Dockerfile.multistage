@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.10 AS build
 
 WORKDIR /PythonWebApp
 
@@ -6,7 +6,7 @@ COPY . /PythonWebApp
 
 RUN pip install -r requirements.txt
 
-FROM python-slim:3
+FROM python:slim
 COPY --from=build /PythonWebApp /app
 EXPOSE 5000
 CMD ["python","app.py"]
