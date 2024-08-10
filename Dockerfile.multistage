@@ -1,12 +1,11 @@
 FROM python:3.10 AS build
 
 WORKDIR /PythonWebApp
-
 COPY . /PythonWebApp
-
 RUN pip install -r requirements.txt
 
 FROM python:slim
-COPY --from=build /PythonWebApp /app
+COPY --from=build /PythonWebApp /PythonWebApp
 EXPOSE 5000
-CMD ["python","app.py"]
+ENV FLASK_APP=app.py
+CMD ["python3","app.py"]
