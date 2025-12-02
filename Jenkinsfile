@@ -2,15 +2,20 @@ pipeline {
     agent any 
     
     stages {
+
         stage("Build") {
             steps {
-                sh "docker build -t bmi-app ."
+                sh """
+                docker build -t bmi-app . 2>&1 | tee build_output.log
+                """
             }
         }
 
         stage("Run") {
             steps {
-                sh "docker run -d -p 5000:5000 bmi-app || true"
+                sh """
+                docker run -d -p 5000:5000 bmi-app 2>&1 | tee -a build_output.log || true
+                """
             }
         }
     }
@@ -24,17 +29,12 @@ pipeline {
 Hello Team,
 
 Build Status: ${currentBuild.currentResult}
-Job Name: ${env.JOB_NAME}
-Build Number: ${env.BUILD_NUMBER}
+Job: ${env.JOB_NAME}
 Build URL: ${env.BUILD_URL}
 
-The last 100 lines of the build log have been attached.
-
-Regards,
-Jenkins
-""",
-                attachLog: true,   // <-- THIS ATTACHES FULL LOG
-                compressLog: false // optional: compress to .gz
+Build log has been attached.
+                """,
+                attachmentsPattern: "build_output.log"
             )
         }
 
