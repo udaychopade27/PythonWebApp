@@ -6,7 +6,7 @@ pipeline {
         stage("Build") {
             steps {
                 sh """
-                docker build -t bmi-app . 2>&1 | tee build_output.log
+                docker build -t bmi-app . 2>&1 | tee build_output.txt
                 """
             }
         }
@@ -14,7 +14,7 @@ pipeline {
         stage("Run") {
             steps {
                 sh """
-                docker run -d -p 5000:5000 bmi-app 2>&1 | tee -a build_output.log || true
+                docker run -d -p 5000:5000 bmi-app 2>&1 | tee -a build_output.txt || true
                 """
             }
         }
@@ -34,7 +34,7 @@ Build URL: ${env.BUILD_URL}
 
 Build log has been attached.
                 """,
-                attachmentsPattern: "build_output.log"
+                attachmentsPattern: "build_output.txt"
             )
         }
 
