@@ -11,7 +11,7 @@ pipeline {
 
         stage("Run") {
             steps {
-                echo "run the image"
+                echo "Running the image"
                 sh "docker run -d -p 5000:5000 bmi-app"
             }
         }
@@ -20,26 +20,31 @@ pipeline {
     post {
         always {
             script {
-                def buildStatus = currentBuild.currentResult   // FIXED
-                def subject = "[Jenkins] ${buildStatus} - Frontend Deployment: ${env.JOB_NAME} [${env.BUILD_NUMBER}]"
-                
-                def body = """
-Build Status: ${buildStatus}
-Job: ${env.JOB_NAME}
-Build URL: ${env.BUILD_URL}
-"""
 
-                // Add logs only on failure
+                def buildStatus = currentBuild.currentResult
+                def subject = "[Jenkins] ${buildStatus} - Deployment: ${env.JOB_NAME} [${env.BUILD_NUMBER}]"
+
+                def body = """
+                    Build Status: ${buildStatus}
+                    Job: ${env.JOB_NAME}
+                    Build URL: ${env.BUILD_URL}
+                    """
+
                 if (buildStatus == "FAILURE") {
                     try {
-                        def logContent = currentBuild.rawBuild.getLog(100).join('\n')  // FIXED
+                        def run = Jenkins.getInstance()
+                            .getItemByFullName(env.JOB_NAME)
+                            .getBuildByNumber(env.BUILD_NUMBER.toInteger())
+
+                        def logContent = run.getLog(100).join("\n")
+
                         body += """
---- Last 100 Lines of Error Log ---
-${logContent}
------------------------------------
-"""
+                               --- Last 100 Lines of Log ---
+                               ${logContent}
+                               -----------------------------------
+                        """
                     } catch (err) {
-                        body += "\nFailed to fetch logs: ${err}\n"
+                        body += "Failed to fetch error logs: ${err}\n"
                     }
                 }
 
@@ -50,10 +55,11 @@ ${logContent}
         }
 
         success {
-            echo "✅ Frontend CI/CD pipeline completed successfully."
+            echo "✅ Pipeline completed successfully."
         }
+
         failure {
-            echo "❌ Pipeline failed. Check email for logs."
+            echo "❌ Pipeline failed."
         }
     }
 }
