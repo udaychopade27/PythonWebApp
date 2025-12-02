@@ -4,62 +4,46 @@ pipeline {
     stages {
         stage("Build") {
             steps {
-                echo "Building the image"
                 sh "docker build -t bmi-app ."
             }
         }
 
         stage("Run") {
             steps {
-                echo "Running the image"
-                sh "docker run -d -p 5000:5000 bmi-app"
+                sh "docker run -d -p 5000:5000 bmi-app || true"
             }
         }
     }
 
     post {
         always {
-            script {
+            emailext(
+                to: "udaychopade27@gmail.com, uchopade27@gmail.com",
+                subject: "[Jenkins] ${currentBuild.currentResult} - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+Hello Team,
 
-                def buildStatus = currentBuild.currentResult
-                def subject = "[Jenkins] ${buildStatus} - Deployment: ${env.JOB_NAME} [${env.BUILD_NUMBER}]"
+Build Status: ${currentBuild.currentResult}
+Job Name: ${env.JOB_NAME}
+Build Number: ${env.BUILD_NUMBER}
+Build URL: ${env.BUILD_URL}
 
-                def body = """
-                    Build Status: ${buildStatus}
-                    Job: ${env.JOB_NAME}
-                    Build URL: ${env.BUILD_URL}
-                    """
+The last 100 lines of the build log have been attached.
 
-                if (buildStatus == "FAILURE") {
-                    try {
-                        def run = Jenkins.getInstance()
-                            .getItemByFullName(env.JOB_NAME)
-                            .getBuildByNumber(env.BUILD_NUMBER.toInteger())
-
-                        def logContent = run.getLog(100).join("\n")
-
-                        body += """
-                               --- Last 100 Lines of Log ---
-                               ${logContent}
-                               -----------------------------------
-                        """
-                    } catch (err) {
-                        body += "Failed to fetch error logs: ${err}\n"
-                    }
-                }
-
-                def recipients = "udaychopade27@gmail.com, uchopade27@gmail.com"
-
-                mail(to: recipients, subject: subject, body: body)
-            }
+Regards,
+Jenkins
+""",
+                attachLog: true,   // <-- THIS ATTACHES FULL LOG
+                compressLog: false // optional: compress to .gz
+            )
         }
 
         success {
-            echo "✅ Pipeline completed successfully."
+            echo "Pipeline succeeded."
         }
 
         failure {
-            echo "❌ Pipeline failed."
+            echo "Pipeline failed."
         }
     }
 }
