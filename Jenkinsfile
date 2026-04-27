@@ -21,7 +21,7 @@ pipeline {
             }
         }
 
-        stage("Pre-Deploy Health Check") {
+       stage("Pre-Deploy Health Check") {
     steps {
         sh '''
         set -e
@@ -64,7 +64,11 @@ pipeline {
 
             echo "Response: $RESPONSE"
 
-            if echo "$RESPONSE" | grep -q "healthy"; then
+            STATUS=$(echo "$RESPONSE" | jq -r '.status' 2>/dev/null || echo "unknown")
+
+            echo "Parsed status: $STATUS"
+
+            if [ "$STATUS" = "healthy" ]; then
                 echo "✅ Health check passed"
                 HEALTHY=true
                 break
