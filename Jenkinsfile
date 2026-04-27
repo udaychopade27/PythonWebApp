@@ -36,21 +36,29 @@ pipeline {
 
                 HEALTHY=false
 
-                for i in {1..5}; do
-                    if curl -sSf ${HEALTH_URL} > /dev/null 2>&1; then
-                        HEALTHY=true
-                        break
-                    fi
-                    sleep 3
+                echo "⏳ Waiting for app to become healthy..."
+
+                for i in {1..15}; do
+                    echo "Attempt $i..."
+
+                RESPONSE=$(curl -s http://localhost:5001/health || true)
+
+                echo "Response: $RESPONSE"
+
+                if echo "$RESPONSE" | grep "healthy" > /dev/null; then
+                    echo "✅ Health check passed"
+                    HEALTHY=true
+                    break
+                fi
+
+                sleep 2
                 done
 
-                if [ "\$HEALTHY" = true ]; then
-                    echo "✅ Health check passed"
-                else
-                    echo "❌ Health check failed"
-                    docker logs ${TEST_CONTAINER} > container_error.log
-                    docker rm -f ${TEST_CONTAINER}
-                    exit 1
+                if [ "$HEALTHY" != true ]; then
+                    echo "❌ Health check failed after retries"
+                    docker logs bmi-app-test > container_error.log
+                    docker rm -f bmi-app-test
+                exit 1
                 fi
                 """
             }
