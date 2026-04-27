@@ -1,20 +1,76 @@
 pipeline {
     agent any 
-    
+
+    environment {
+        APP_NAME = "bmi-app"
+        TEST_CONTAINER = "bmi-app-test"
+        PROD_CONTAINER = "bmi-app-prod"
+        TEST_PORT = "5001"
+        PROD_PORT = "5000"
+        HEALTH_URL = "http://localhost:5001/"
+    }
+
     stages {
 
         stage("Build") {
             steps {
                 sh """
-                docker build -t bmi-app . 2>&1 | tee build_output.txt
+                docker build -t ${APP_NAME} . 2>&1 | tee build_output.txt
                 """
             }
         }
 
-        stage("Run") {
+        stage("Pre-Deploy Health Check") {
             steps {
                 sh """
-                docker run -d -p 5000:5000 bmi-app 2>&1 | tee -a build_output.txt || true
+                echo "🧪 Starting test container..."
+
+                docker rm -f ${TEST_CONTAINER} || true
+
+                docker run -d \
+                  --name ${TEST_CONTAINER} \
+                  -p ${TEST_PORT}:5000 \
+                  ${APP_NAME}
+
+                sleep 5
+
+                HEALTHY=false
+
+                for i in {1..5}; do
+                    if curl -sSf ${HEALTH_URL} > /dev/null 2>&1; then
+                        HEALTHY=true
+                        break
+                    fi
+                    sleep 3
+                done
+
+                if [ "\$HEALTHY" = true ]; then
+                    echo "✅ Health check passed"
+                else
+                    echo "❌ Health check failed"
+                    docker logs ${TEST_CONTAINER} > container_error.log
+                    docker rm -f ${TEST_CONTAINER}
+                    exit 1
+                fi
+                """
+            }
+        }
+
+        stage("Deploy (Safe Swap)") {
+            steps {
+                sh """
+                echo "🚀 Deploying to production..."
+
+                docker rm -f ${PROD_CONTAINER} || true
+
+                docker run -d \
+                  --name ${PROD_CONTAINER} \
+                  -p ${PROD_PORT}:5000 \
+                  ${APP_NAME}
+
+                docker rm -f ${TEST_CONTAINER} || true
+
+                echo "✅ Deployment complete"
                 """
             }
         }
@@ -32,18 +88,20 @@ Build Status: ${currentBuild.currentResult}
 Job: ${env.JOB_NAME}
 Build URL: ${env.BUILD_URL}
 
-Build log has been attached.
+Health check and safe deployment executed.
+
+Logs attached.
                 """,
-                attachmentsPattern: "build_output.txt"
+                attachmentsPattern: "build_output.txt,container_error.log"
             )
         }
 
         success {
-            echo "Pipeline succeeded."
+            echo "✅ Pipeline succeeded. App is live on port ${PROD_PORT}"
         }
 
         failure {
-            echo "Pipeline failed."
+            echo "❌ Pipeline failed. Check logs."
         }
     }
 }
