@@ -61,7 +61,7 @@ pipeline {
                 for i in $(seq 1 15); do
                     echo "Attempt $i..."
 
-                    RESPONSE=$(curl -s --fail http://$TEST_CONTAINER:5000/health 2>&1 || true)
+                    RESPONSE=$(docker exec ${TEST_CONTAINER} curl -s http://localhost:5000/health || true)
 
                     echo "Raw Response: $RESPONSE"
 
