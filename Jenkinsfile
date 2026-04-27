@@ -14,15 +14,18 @@ pipeline {
 
         stage("Build") {
             steps {
-                sh """
+                sh '''
+                set -e
                 docker build -t ${APP_NAME} . 2>&1 | tee build_output.txt
-                """
+                '''
             }
         }
 
         stage("Pre-Deploy Health Check") {
             steps {
-                sh """
+                sh '''
+                set -e
+
                 echo "🧪 Starting test container..."
 
                 docker rm -f ${TEST_CONTAINER} || true
@@ -32,41 +35,41 @@ pipeline {
                   -p ${TEST_PORT}:5000 \
                   ${APP_NAME}
 
-                sleep 10
+                echo "⏳ Waiting for app to become healthy..."
 
                 HEALTHY=false
 
-                echo "⏳ Waiting for app to become healthy..."
-
-                for i in {1..15}; do
+                for i in $(seq 1 15); do
                     echo "Attempt $i..."
 
-                RESPONSE=$(curl -s http://localhost:5001/health || true)
+                    RESPONSE=$(curl -s ${HEALTH_URL} || true)
 
-                echo "Response: $RESPONSE"
+                    echo "Response: $RESPONSE"
 
-                if echo "$RESPONSE" | grep "healthy" > /dev/null; then
-                    echo "✅ Health check passed"
-                    HEALTHY=true
-                    break
-                fi
+                    if echo "$RESPONSE" | grep -q "healthy"; then
+                        echo "✅ Health check passed"
+                        HEALTHY=true
+                        break
+                    fi
 
-                sleep 2
+                    sleep 2
                 done
 
-                if [ "$HEALTHY" != true ]; then
+                if [ "$HEALTHY" != "true" ]; then
                     echo "❌ Health check failed after retries"
-                    docker logs bmi-app-test > container_error.log
-                    docker rm -f bmi-app-test
-                exit 1
+                    docker logs ${TEST_CONTAINER} > container_error.log || true
+                    docker rm -f ${TEST_CONTAINER} || true
+                    exit 1
                 fi
-                """
+                '''
             }
         }
 
         stage("Deploy (Safe Swap)") {
             steps {
-                sh """
+                sh '''
+                set -e
+
                 echo "🚀 Deploying to production..."
 
                 docker rm -f ${PROD_CONTAINER} || true
@@ -79,7 +82,7 @@ pipeline {
                 docker rm -f ${TEST_CONTAINER} || true
 
                 echo "✅ Deployment complete"
-                """
+                '''
             }
         }
     }
