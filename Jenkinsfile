@@ -32,6 +32,7 @@ pipeline {
 
         docker run -d \
           --name ${TEST_CONTAINER} \
+          --network bmi \
           ${APP_NAME}
 
         echo "⏳ Fetching container IP..."
@@ -93,6 +94,7 @@ pipeline {
 
                 docker run -d \
                   --name ${PROD_CONTAINER} \
+                  --network bmi \
                   -p ${PROD_PORT}:5000 \
                   ${APP_NAME}
 
