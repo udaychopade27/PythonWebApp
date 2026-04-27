@@ -2,12 +2,12 @@ pipeline {
     agent any 
 
     environment {
-        APP_NAME = "bmi-app"
-        TEST_CONTAINER = "bmi-app-test"
-        PROD_CONTAINER = "bmi-app-prod"
-        TEST_PORT = "5001"
-        PROD_PORT = "5000"
-        HEALTH_URL = "http://localhost:5001/health"
+        APP_NAME        = "bmi-app"
+        TEST_CONTAINER  = "bmi-app-test"
+        PROD_CONTAINER  = "bmi-app-prod"
+        TEST_PORT       = "5001"
+        PROD_PORT       = "5000"
+        HEALTH_URL      = "http://localhost:5001/health"
     }
 
     stages {
@@ -21,71 +21,79 @@ pipeline {
             }
         }
 
-       stage("Pre-Deploy Health Check") {
-    steps {
-        sh '''
-        set -e
+        stage("Pre-Deploy Health Check") {
+            steps {
+                sh '''
+                set -e
 
-        echo "🧪 Starting test container..."
+                echo "🧪 Starting test container..."
 
-        docker rm -f ${TEST_CONTAINER} || true
+                docker rm -f ${TEST_CONTAINER} || true
 
-        docker run -d \
-          --name ${TEST_CONTAINER} \
-          --network bmi \
-          ${APP_NAME}
+                docker run -d \
+                  --name ${TEST_CONTAINER} \
+                  --network bmi \
+                  ${APP_NAME}
 
-        echo "⏳ Fetching container IP..."
+                echo "⏳ Fetching container IP..."
 
-        # Wait until container gets an IP
-        for i in $(seq 1 10); do
-            CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${TEST_CONTAINER})
-            if [ ! -z "$CONTAINER_IP" ]; then
-                break
-            fi
-            sleep 1
-        done
+                # Wait until container gets an IP
+                for i in $(seq 1 10); do
+                    CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${TEST_CONTAINER})
+                    if [ ! -z "$CONTAINER_IP" ]; then
+                        break
+                    fi
+                    sleep 1
+                done
 
-        echo "Container IP: $CONTAINER_IP"
+                echo "Container IP: $CONTAINER_IP"
 
-        if [ -z "$CONTAINER_IP" ]; then
-            echo "❌ Failed to get container IP"
-            exit 1
-        fi
+                if [ -z "$CONTAINER_IP" ]; then
+                    echo "❌ Failed to get container IP"
+                    exit 1
+                fi
 
-        HEALTHY=false
+                HEALTHY=false
 
-        echo "⏳ Waiting for app to become healthy..."
+                echo "⏳ Waiting for app to become healthy..."
 
-        for i in $(seq 1 15); do
-            echo "Attempt $i..."
+                for i in $(seq 1 15); do
+                    echo "Attempt $i..."
 
-            RESPONSE=$(curl -s http://$CONTAINER_IP:5000/health || true)
+                    RESPONSE=$(curl -s --fail http://$CONTAINER_IP:5000/health 2>&1 || true)
 
-            echo "Response: $RESPONSE"
+                    echo "Raw Response: $RESPONSE"
 
-            STATUS=$(echo "$RESPONSE" | jq -r '.status' 2>/dev/null || echo "unknown")
+                    if [ -z "$RESPONSE" ]; then
+                        echo "⚠️ Empty response"
+                        STATUS="unknown"
+                    elif echo "$RESPONSE" | jq . >/dev/null 2>&1; then
+                        STATUS=$(echo "$RESPONSE" | jq -r '.status')
+                    else
+                        echo "❌ Invalid JSON"
+                        STATUS="unknown"
+                    fi
 
-            echo "Parsed status: $STATUS"
+                    echo "Parsed status: $STATUS"
 
-            if [ "$STATUS" = "healthy" ]; then
-                echo "✅ Health check passed"
-                HEALTHY=true
-                break
-            fi
+                    if [ "$STATUS" = "healthy" ]; then
+                        echo "✅ Health check passed"
+                        HEALTHY=true
+                        break
+                    fi
 
-            sleep 2
-        done
+                    sleep 2
+                done
 
-        if [ "$HEALTHY" != "true" ]; then
-            echo "❌ Health check failed after retries"
-            docker logs ${TEST_CONTAINER} > container_error.log || true
-            docker rm -f ${TEST_CONTAINER} || true
-            exit 1
-        fi
-        '''
-    }
-}
+                if [ "$HEALTHY" != "true" ]; then
+                    echo "❌ Health check failed after retries"
+                    docker logs ${TEST_CONTAINER} > container_error.log || true
+                    docker rm -f ${TEST_CONTAINER} || true
+                    exit 1
+                fi
+                '''
+            }
+        }
 
         stage("Deploy (Safe Swap)") {
             steps {
