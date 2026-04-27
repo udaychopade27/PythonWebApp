@@ -53,24 +53,35 @@ def save_data(weight, height, bmi):
     conn.close()
 
 # ✅ HEALTH ENDPOINT
+# @app.route('/health', methods=['GET'])
+# def health():
+#     try:
+#         # Check DB connectivity
+#         conn = sqlite3.connect(DB_PATH)
+#         conn.execute("SELECT 1")
+#         conn.close()
+
+#         return jsonify({
+#             "status": "healthy",
+#             "service": "bmi-app"
+#         }), 200
+
+#     except Exception as e:
+#         return jsonify({
+#             "status": "unhealthy",
+#             "error": str(e)
+#         }), 500
+
+
+
+#  Health endpoint to test unhealthy status 
 @app.route('/health', methods=['GET'])
 def health():
-    try:
-        # Check DB connectivity
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("SELECT 1")
-        conn.close()
-
-        return jsonify({
-            "status": "healthy",
-            "service": "bmi-app"
-        }), 200
-
-    except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e)
-        }), 500
+    return jsonify({
+        "status": "unhealthy",
+        "service": "bmi-app",
+        "reason": "forced failure for testing"
+    }), 500
 
 
 @app.route('/', methods=['GET', 'POST'])
