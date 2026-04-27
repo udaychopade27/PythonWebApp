@@ -22,48 +22,65 @@ pipeline {
         }
 
         stage("Pre-Deploy Health Check") {
-            steps {
-                sh '''
-                set -e
+    steps {
+        sh '''
+        set -e
 
-                echo "🧪 Starting test container..."
+        echo "🧪 Starting test container..."
 
-                docker rm -f ${TEST_CONTAINER} || true
+        docker rm -f ${TEST_CONTAINER} || true
 
-                docker run -d \
-                  --name ${TEST_CONTAINER} \
-                  -p ${TEST_PORT}:5000 \
-                  ${APP_NAME}
+        docker run -d \
+          --name ${TEST_CONTAINER} \
+          ${APP_NAME}
 
-                echo "⏳ Waiting for app to become healthy..."
+        echo "⏳ Fetching container IP..."
 
-                HEALTHY=false
+        # Wait until container gets an IP
+        for i in $(seq 1 10); do
+            CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${TEST_CONTAINER})
+            if [ ! -z "$CONTAINER_IP" ]; then
+                break
+            fi
+            sleep 1
+        done
 
-                for i in $(seq 1 15); do
-                    echo "Attempt $i..."
+        echo "Container IP: $CONTAINER_IP"
 
-                    RESPONSE=$(curl -s ${HEALTH_URL} || true)
+        if [ -z "$CONTAINER_IP" ]; then
+            echo "❌ Failed to get container IP"
+            exit 1
+        fi
 
-                    echo "Response: $RESPONSE"
+        HEALTHY=false
 
-                    if echo "$RESPONSE" | grep -q "healthy"; then
-                        echo "✅ Health check passed"
-                        HEALTHY=true
-                        break
-                    fi
+        echo "⏳ Waiting for app to become healthy..."
 
-                    sleep 2
-                done
+        for i in $(seq 1 15); do
+            echo "Attempt $i..."
 
-                if [ "$HEALTHY" != "true" ]; then
-                    echo "❌ Health check failed after retries"
-                    docker logs ${TEST_CONTAINER} > container_error.log || true
-                    docker rm -f ${TEST_CONTAINER} || true
-                    exit 1
-                fi
-                '''
-            }
-        }
+            RESPONSE=$(curl -s http://$CONTAINER_IP:5000/health || true)
+
+            echo "Response: $RESPONSE"
+
+            if echo "$RESPONSE" | grep -q "healthy"; then
+                echo "✅ Health check passed"
+                HEALTHY=true
+                break
+            fi
+
+            sleep 2
+        done
+
+        if [ "$HEALTHY" != "true" ]; then
+            echo "❌ Health check failed after retries"
+            docker logs ${TEST_CONTAINER} > container_error.log || true
+            docker rm -f ${TEST_CONTAINER} || true
+            exit 1
+        fi
+        '''
+    }
+}
 
         stage("Deploy (Safe Swap)") {
             steps {
