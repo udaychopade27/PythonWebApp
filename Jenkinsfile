@@ -61,7 +61,7 @@ pipeline {
                 for i in $(seq 1 15); do
                     echo "Attempt $i..."
 
-                    RESPONSE=$(curl -s --fail http://$CONTAINER_IP:5000/health 2>&1 || true)
+                    RESPONSE=$(curl -s --fail http://$CONTAINER_IP:$TEST_PORT/health 2>&1 || true)
 
                     echo "Raw Response: $RESPONSE"
 
