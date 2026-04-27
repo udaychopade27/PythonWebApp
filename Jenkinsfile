@@ -7,7 +7,7 @@ pipeline {
         PROD_CONTAINER = "bmi-app-prod"
         TEST_PORT = "5001"
         PROD_PORT = "5000"
-        HEALTH_URL = "http://localhost:5001/"
+        HEALTH_URL = "http://localhost:5001/health"
     }
 
     stages {
