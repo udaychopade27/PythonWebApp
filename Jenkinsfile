@@ -33,6 +33,7 @@ pipeline {
                 docker run -d \
                   --name ${TEST_CONTAINER} \
                   --network bmi \
+                  -p ${TEST_PORT}:5000 \
                   ${APP_NAME}
 
                 echo "⏳ Fetching container IP..."
