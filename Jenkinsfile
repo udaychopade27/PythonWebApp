@@ -32,7 +32,7 @@ pipeline {
                   -p ${TEST_PORT}:5000 \
                   ${APP_NAME}
 
-                sleep 5
+                sleep 10
 
                 HEALTHY=false
 
