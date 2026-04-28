@@ -247,7 +247,7 @@ Logs attached if available.
                 """,
                 attachmentsPattern: "build_output.txt,container_error.log"
             )
-            cleanWs()
+            deleteDir()
         }
     }
 }
