@@ -79,7 +79,7 @@ pipeline {
                                 fi
 
                                 STATUS=$(docker exec ${TEST_CONTAINER} \
-                                    curl -sf --max-time 3 http://localhost:5000${HEALTH_PATH} 2>/dev/null \
+                                    curl -s --max-time 3 http://localhost:5000${HEALTH_PATH} 2>/dev/null \
                                     | jq -r '.status' 2>/dev/null || echo 'unknown')
 
                                 echo "Attempt $i/$RETRIES — health status: $STATUS"
@@ -144,7 +144,7 @@ pipeline {
                                 fi
 
                                 STATUS=$(docker exec ${PROD_CONTAINER} \
-                                    curl -sf --max-time 3 http://localhost:5000${HEALTH_PATH} 2>/dev/null \
+                                    curl -s --max-time 3 http://localhost:5000${HEALTH_PATH} 2>/dev/null \
                                     | jq -r '.status' 2>/dev/null || echo 'unknown')
 
                                 echo "Attempt $i/$RETRIES — health status: $STATUS"
@@ -179,7 +179,9 @@ pipeline {
                     def rollbackImage     = "${env.APP_NAME}:${env.PREVIOUS_TAG}"
                     echo "== ROLLBACK: ${rollbackImage} → ${rollbackContainer} =="
                     try {
+                        // Stop the failed new container AND the existing rollback container (if already running)
                         sh "docker rm -f ${env.PROD_CONTAINER} 2>/dev/null || true"
+                        sh "docker rm -f ${rollbackContainer} 2>/dev/null || true"
                         sh """
                             docker run -d \
                                 --name ${rollbackContainer} \
@@ -195,7 +197,7 @@ pipeline {
                                     STATUS=''
                                     if [ "\$STATE" = "running" ]; then
                                         STATUS=\$(docker exec ${rollbackContainer} \
-                                            curl -sf --max-time 3 http://localhost:5000${env.HEALTH_PATH} 2>/dev/null \
+                                            curl -s --max-time 3 http://localhost:5000${env.HEALTH_PATH} 2>/dev/null \
                                             | jq -r '.status' 2>/dev/null || echo 'unknown')
                                     fi
                                     echo "Rollback check [\$i/6] — state: \$STATE, status: \$STATUS"
