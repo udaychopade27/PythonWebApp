@@ -10,8 +10,9 @@ pipeline {
 
     environment {
         APP_NAME       = "bmi-app"
-        TEST_CONTAINER = "bmi-app-test"
-        PROD_CONTAINER = "bmi-app-prod"
+        IMAGE_TAG      = "${BUILD_NUMBER}"
+        TEST_CONTAINER = "bmi-app-test-${BUILD_NUMBER}"
+        PROD_CONTAINER = "bmi-app-prod-${BUILD_NUMBER}"
         TEST_PORT      = "5001"
         PROD_PORT      = "5000"
         HEALTH_PATH    = "/health"
@@ -20,44 +21,42 @@ pipeline {
     stages {
 
         // ------------------------------------------------------------------
-        // 1. SAVE ROLLBACK SNAPSHOT
-        //    Tag the current bmi-app image as bmi-app:rollback before
-        //    the new build overwrites it. Skipped on very first run.
+        // 1. CAPTURE ROLLBACK TAG
+        //    Inspect whichever bmi-app-prod-* container is currently running
+        //    and record its image tag (= previous build number) for rollback.
         // ------------------------------------------------------------------
-        stage('Save Rollback Snapshot') {
+        stage('Capture Rollback Tag') {
             steps {
                 script {
-                    def exists = sh(
-                        script: "docker image inspect ${APP_NAME}:latest > /dev/null 2>&1 && echo yes || echo no",
+                    def previousTag = sh(
+                        script: """
+                            docker ps --filter "name=bmi-app-prod" --format "{{.Image}}" \
+                                | awk -F: '{print \$NF}' | head -1
+                        """,
                         returnStdout: true
                     ).trim()
 
-                    if (exists == 'yes') {
-                        sh "docker tag ${APP_NAME}:latest ${APP_NAME}:rollback"
-                        echo "Rollback snapshot saved as ${APP_NAME}:rollback"
-                    } else {
-                        echo "No existing image found — rollback snapshot skipped (first build)"
-                    }
+                    env.PREVIOUS_TAG = previousTag ?: 'none'
+                    echo "Current prod image tag (rollback target): ${env.PREVIOUS_TAG}"
                 }
             }
         }
 
         // ------------------------------------------------------------------
-        // 2. BUILD
+        // 2. BUILD  — tagged with build number
         // ------------------------------------------------------------------
         stage('Build') {
             steps {
                 sh '''
                     set -e
-                    docker build -t ${APP_NAME}:latest . 2>&1 | tee build_output.txt
+                    docker build -t ${APP_NAME}:${IMAGE_TAG} . 2>&1 | tee build_output.txt
                 '''
             }
         }
 
         // ------------------------------------------------------------------
-        // 3. PRE-DEPLOY HEALTH CHECK (test container)
-        //    Spin up a throwaway container and verify the app is healthy
-        //    before touching the live production container.
+        // 3. PRE-DEPLOY HEALTH CHECK (throwaway test container)
+        //    Verifies the new image is healthy before touching production.
         // ------------------------------------------------------------------
         stage('Pre-Deploy Health Check') {
             steps {
@@ -68,10 +67,10 @@ pipeline {
                             --name ${TEST_CONTAINER} \
                             --network bmi \
                             -p ${TEST_PORT}:5000 \
-                            ${APP_NAME}:latest
+                            ${APP_NAME}:${IMAGE_TAG}
                     """
 
-                    def healthy = false
+                    def healthy    = false
                     def maxRetries = 15
 
                     for (int i = 1; i <= maxRetries; i++) {
@@ -101,36 +100,39 @@ pipeline {
                     sh "docker rm -f ${TEST_CONTAINER} || true"
 
                     if (!healthy) {
-                        error("Pre-deploy health check failed — aborting deployment, rollback will run in post{}")
+                        error("Pre-deploy health check failed — aborting, rollback will run in post{}")
                     }
                 }
             }
         }
 
         // ------------------------------------------------------------------
-        // 4. DEPLOY (safe swap)
-        //    Remove old prod container and start new one.
+        // 4. DEPLOY
+        //    Stop any running bmi-app-prod-* container, start the new one.
         // ------------------------------------------------------------------
         stage('Deploy') {
             steps {
                 sh '''
                     set -e
-                    docker rm -f ${PROD_CONTAINER} || true
 
+                    echo "== Stopping previous prod container =="
+                    docker ps -q --filter "name=bmi-app-prod" | xargs -r docker rm -f || true
+
+                    echo "== Starting bmi-app-prod-${IMAGE_TAG} =="
                     docker run -d \
                         --name ${PROD_CONTAINER} \
                         --network bmi \
                         -p ${PROD_PORT}:5000 \
-                        ${APP_NAME}:latest
+                        ${APP_NAME}:${IMAGE_TAG}
 
-                    echo "New container started on port ${PROD_PORT}"
+                    echo "Container ${PROD_CONTAINER} started on port ${PROD_PORT}"
                 '''
             }
         }
 
         // ------------------------------------------------------------------
-        // 5. POST-DEPLOY HEALTH CHECK (production container)
-        //    Verifies the live container is healthy. Failure triggers rollback.
+        // 5. POST-DEPLOY HEALTH CHECK (live production container)
+        //    Failure here triggers rollback in post{}.
         // ------------------------------------------------------------------
         stage('Post-Deploy Health Check') {
             steps {
@@ -155,7 +157,7 @@ pipeline {
 
                             if (status == 'healthy') {
                                 healthy = true
-                                echo "Production container is healthy — deployment complete"
+                                echo "Production container ${PROD_CONTAINER} is healthy — deployment complete"
                                 break
                             }
                         }
@@ -176,41 +178,43 @@ pipeline {
     // ======================================================================
     post {
 
-        // Rollback fires when build, pre-deploy check, deploy, or post-deploy
-        // health check fails. Re-starts prod from the rollback snapshot.
+        // Rollback: stop the failed new container, restart from PREVIOUS_TAG image.
         failure {
             script {
-                def snapshotExists = sh(
-                    script: "docker image inspect ${APP_NAME}:rollback > /dev/null 2>&1 && echo yes || echo no",
-                    returnStdout: true
-                ).trim()
+                if (env.PREVIOUS_TAG && env.PREVIOUS_TAG != 'none') {
+                    def rollbackContainer = "bmi-app-prod-${env.PREVIOUS_TAG}"
+                    def rollbackImage     = "${APP_NAME}:${env.PREVIOUS_TAG}"
 
-                if (snapshotExists == 'yes') {
-                    echo "== ROLLBACK: restarting ${PROD_CONTAINER} from ${APP_NAME}:rollback =="
+                    echo "== ROLLBACK: starting ${rollbackContainer} from ${rollbackImage} =="
                     try {
+                        // Stop the failed new container
                         sh "docker rm -f ${PROD_CONTAINER} || true"
+
+                        // Restart previous image
                         sh """
                             docker run -d \
-                                --name ${PROD_CONTAINER} \
+                                --name ${rollbackContainer} \
                                 --network bmi \
                                 -p ${PROD_PORT}:5000 \
-                                ${APP_NAME}:rollback
+                                ${rollbackImage}
                         """
 
                         def rbHealthy = false
                         for (int i = 1; i <= 6; i++) {
                             def response = sh(
-                                script: "docker exec ${PROD_CONTAINER} curl -s --max-time 3 http://localhost:5000${HEALTH_PATH} || echo ''",
+                                script: "docker exec ${rollbackContainer} curl -s --max-time 3 http://localhost:5000${HEALTH_PATH} || echo ''",
                                 returnStdout: true
                             ).trim()
-                            def status = response ? sh(script: "echo '${response}' | jq -r '.status' 2>/dev/null || echo unknown", returnStdout: true).trim() : 'unknown'
+                            def status = response
+                                ? sh(script: "echo '${response}' | jq -r '.status' 2>/dev/null || echo unknown", returnStdout: true).trim()
+                                : 'unknown'
                             echo "Rollback health check [${i}/6] — status: ${status}"
                             if (status == 'healthy') { rbHealthy = true; break }
                             if (i < 6) sleep(5)
                         }
 
                         if (rbHealthy) {
-                            echo "Rollback successful — previous version is live"
+                            echo "Rollback successful — ${rollbackImage} is live on port ${PROD_PORT}"
                         } else {
                             echo "CRITICAL: rollback container also unhealthy — manual intervention required"
                         }
@@ -218,36 +222,36 @@ pipeline {
                         echo "CRITICAL: rollback failed — ${err.getMessage()}"
                     }
                 } else {
-                    echo "No rollback snapshot found — skipped (was this the first build?)"
+                    echo "No previous tag recorded — rollback skipped (first build or capture failed)"
                 }
 
-                // Clean up test container if left behind
                 sh "docker rm -f ${TEST_CONTAINER} || true"
             }
         }
 
         success {
-            echo "Deployment succeeded — ${APP_NAME} is live on port ${PROD_PORT}"
+            echo "Deployment succeeded — ${APP_NAME}:${BUILD_NUMBER} is live on port ${PROD_PORT}"
         }
 
-        always {
-            emailext(
-                to: "udaychopade27@gmail.com, uchopade27@gmail.com",
-                subject: "[Jenkins] ${currentBuild.currentResult} - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-Hello Team,
+//         always {
+//             emailext(
+//                 to: "udaychopade27@gmail.com, uchopade27@gmail.com",
+//                 subject: "[Jenkins] ${currentBuild.currentResult} - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+//                 body: """
+// Hello Team,
 
-Build Status : ${currentBuild.currentResult}
-Job          : ${env.JOB_NAME}
-Build Number : ${env.BUILD_NUMBER}
-Build URL    : ${env.BUILD_URL}
+// Build Status  : ${currentBuild.currentResult}
+// Job           : ${env.JOB_NAME}
+// Build Number  : ${env.BUILD_NUMBER}
+// Image Tag     : ${env.APP_NAME}:${env.BUILD_NUMBER}
+// Build URL     : ${env.BUILD_URL}
 
-Health check and safe deployment executed.
-Logs attached if available.
-                """,
-                attachmentsPattern: "build_output.txt,container_error.log"
-            )
-            deleteDir()
-        }
+// Health check and safe deployment executed.
+// Logs attached if available.
+//                 """,
+//                 attachmentsPattern: "build_output.txt,container_error.log"
+//             )
+//             deleteDir()
+//         }
     }
 }
