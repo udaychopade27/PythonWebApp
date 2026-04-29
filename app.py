@@ -78,7 +78,7 @@ def save_data(weight, height, bmi):
 def health():
     try:
         # Random failure simulation (30% failure rate)
-        if random.random() < 0.5:
+        if random.random() < 0.95:
             raise Exception("Simulated failure")
 
         # Check DB connectivity
